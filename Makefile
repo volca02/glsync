@@ -12,7 +12,7 @@ SRC = src
 EXAMPLES = $(SRC)/examples
 
 VERSION=0
-RELEASE=$(VERSION).2.0
+RELEASE=$(VERSION).2.1
 
 all: $(BUILD)/libelfhacks.so.$(RELEASE) $(BUILD)/elfhacks.h
 

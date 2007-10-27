@@ -6,7 +6,7 @@
  */
 
 /* elfhacks.h -- Various ELF run-time hacks
-  version 0.2.0, October 27th, 2007
+  version 0.2.1, October 27th, 2007
 
   Copyright (C) 2007 Pyry Haulos
 
