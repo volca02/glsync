@@ -12,7 +12,7 @@ SRC = src
 EXAMPLES = $(SRC)/examples
 
 VERSION=0
-RELEASE=$(VERSION).1.1
+RELEASE=$(VERSION).2.0
 
 all: $(BUILD)/libelfhacks.so.$(RELEASE) $(BUILD)/elfhacks.h
 
@@ -38,7 +38,7 @@ $(BUILD)/elfhacks.h: $(BUILD) $(SRC)/elfhacks.h
 	cp $(SRC)/elfhacks.h $(BUILD)/elfhacks.h
 
 $(BUILD)/dlsymhook.so: $(BUILD) $(EXAMPLES)/dlsymhook.c $(BUILD)/libelfhacks.so.$(RELEASE)
-	$(CC) $(CFLAGS) $(LDFLAGS) -Wl,-soname,dlsymhook.so -fPIC -shared -L$(BUILD) -I$(BUILD) -lelfhacks $(EXAMPLES)/dlsymhook.c -o dlsymhook.so
+	$(CC) $(CFLAGS) $(LDFLAGS) -Wl,-soname,dlsymhook.so -fPIC -shared -L$(BUILD) -I$(BUILD) -lelfhacks $(EXAMPLES)/dlsymhook.c -o $(BUILD)/dlsymhook.so
 
 install: $(BUILD)/libelfhacks.so.$(RELEASE) $(BUILD)/elfhacks.h
 	install -Dm 0755 $(BUILD)/libelfhacks.so.$(RELEASE) $(DESTDIR)/usr/$(MLIBDIR)/libelfhacks.so.$(RELEASE)

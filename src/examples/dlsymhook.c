@@ -34,17 +34,19 @@ void get_real_functions()
 		fprintf(stderr, "can't get libdl.so\n");
 		exit(1);
 	}
-	
+
+	eh_set_rel(libdl, "foobar", NULL);
+
 	if (eh_find_sym(libdl, "dlopen", (void **) &__dlopen)) {
 		fprintf(stderr, "can't get dlopen()\n");
 		exit(1);
 	}
-	
+
 	if (eh_find_sym(libdl, "dlsym", (void **) &__dlsym)) {
 		fprintf(stderr, "can't get dlsym()\n");
 		exit(1);
 	}
-	
+
 	eh_free_obj(libdl);
 }
 

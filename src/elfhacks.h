@@ -6,7 +6,7 @@
  */
 
 /* elfhacks.h -- Various ELF run-time hacks
-  version 0.1.1, October 9th, 2007
+  version 0.2.0, October 27th, 2007
 
   Copyright (C) 2007 Pyry Haulos
 
@@ -51,24 +51,18 @@ typedef struct {
 	const char *name;
 	/** base address in memory */
 	ElfW(Addr) addr;
-	/** ELF header */
-	ElfW(Ehdr) *ehdr;
 	/** program headers */
 	const ElfW(Phdr) *phdr;
 	/** number of program headers */
 	ElfW(Half) phnum;
-	/** section headers */
-	ElfW(Shdr) *shdr;
-	/** number of section headers */
-	ElfW(Half) shnum;
-	/** section name string table */
-	char *shstr;
-	/** .dynsym */
-	ElfW(Sym) *dynsym;
-	/** number of .dynsym entries */
-	ElfW(Half) symnum;
+	/** .dynamic */
+	ElfW(Dyn) *dynamic;
 	/** .symtab */
-	char *symtab;
+	ElfW(Sym) *symtab;
+	/** .strtab */
+	const char *strtab;
+	/** symbol hash table */
+	ElfW(Word) *hash_table;
 } eh_obj_t;
 
 /**

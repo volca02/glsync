@@ -35,9 +35,11 @@
 
 #ifdef __elf64
 # define ELFW_R_SYM ELF64_R_SYM
+# define ElfW_Sword Elf64_Sxword
 #else
 # ifdef __elf32
 #  define ELFW_R_SYM ELF32_R_SYM
+#  define ElfW_Sword Elf32_Sword
 # else
 #  error neither __elf32 nor __elf64 is defined
 # endif
@@ -45,28 +47,28 @@
 
 int eh_phdr_callback(struct dl_phdr_info *info, size_t size, void *argptr);
 int eh_load_obj(eh_obj_t *obj);
-int eh_find_shdr(eh_obj_t *obj, const char *name, ElfW(Shdr) **shdrptr);
+int eh_find_next_dyn(eh_obj_t *obj, ElfW_Sword tag, int i, ElfW(Dyn) **next);
 
 int eh_phdr_callback(struct dl_phdr_info *info, size_t size, void *argptr)
 {
 	eh_obj_t *find = (eh_obj_t *) argptr;
-	
+
 	if (find->name == NULL) {
 		if (strcmp(info->dlpi_name, ""))
 			return 0;
 	} else if (fnmatch(find->name, info->dlpi_name, 0))
 		return 0;
-	
+
 	if (find->name == NULL) /* TODO readlink? */
 		find->name = "/proc/self/exe";
 	else
 		find->name = info->dlpi_name;
 	find->addr = info->dlpi_addr;
-	
+
 	/* segment headers */
 	find->phdr = info->dlpi_phdr;
 	find->phnum = info->dlpi_phnum;
-	
+
 	return 0;
 }
 
@@ -76,134 +78,189 @@ int eh_find_obj(const char *search, eh_obj_t **objptr)
 	   Another way could be parsing /proc/self/exe or using
 	   pmap() on Solaris or *BSD */
 	eh_obj_t *obj;
-	int ret;
-	ElfW(Shdr) *shdr;
+	int p;
 	*objptr = NULL;
-	
+
 	if ((obj = (eh_obj_t *) malloc(sizeof(eh_obj_t))) == NULL)
 		return ENOMEM;
 
 	obj->name = search;
 	dl_iterate_phdr(eh_phdr_callback, obj);
-	
+
 	if (!obj->phdr)
 		return EAGAIN;
-	
-	if ((ret = eh_load_obj(obj)))
-		return ret;
-	
-	if ((ret = eh_find_shdr(obj, ".dynstr", &shdr)))
-		return ret;
-	obj->symtab = (char *) (shdr->sh_addr + obj->addr);
-	
-	if ((ret = eh_find_shdr(obj, ".dynsym", &shdr)))
-		return ret;
-	obj->dynsym = (ElfW(Sym) *) (shdr->sh_addr + obj->addr);
-	obj->symnum = shdr->sh_size / sizeof(ElfW(Sym));
-	
+
+	/*
+	 ELF spec says in section header documentation, that:
+	 "An object file may have only one dynamic section."
+
+	 Let's assume it means that object has only one PT_DYNAMIC
+	 as well.
+	*/
+	obj->dynamic = NULL;
+	for (p = 0; p < obj->phnum; p++) {
+		if (obj->phdr[p].p_type == PT_DYNAMIC) {
+			if (obj->dynamic)
+				return ENOTSUP;
+
+			obj->dynamic = (ElfW(Dyn) *) (obj->phdr[p].p_vaddr + obj->addr);
+		}
+	}
+
+	if (!obj->dynamic)
+		return ENOTSUP;
+
+	/*
+	 ELF spec says that program is allowed to have more than one
+	 .strtab but does not describe how string table indexes translate
+	 to multiple string tables.
+
+	 And spec says that only one SHT_HASH is allowed, does it mean that
+	 obj has only one DT_HASH?
+
+	 About .symtab it does not mention anything about if multiple
+	 symbol tables are allowed or not.
+
+	 Maybe st_shndx is the key here?
+	*/
+	obj->strtab = NULL;
+	obj->hash_table = NULL;
+	obj->symtab = NULL;
+	p = 0;
+	while (obj->dynamic[p].d_tag != DT_NULL) {
+		if (obj->dynamic[p].d_tag == DT_STRTAB) {
+			if (obj->strtab)
+				return ENOTSUP;
+
+			obj->strtab = (const char *) obj->dynamic[p].d_un.d_ptr;
+		} else if (obj->dynamic[p].d_tag == DT_HASH) {
+			if (obj->hash_table)
+				return ENOTSUP;
+
+			obj->hash_table = (ElfW(Word) *) obj->dynamic[p].d_un.d_ptr;
+		} else if (obj->dynamic[p].d_tag == DT_SYMTAB) {
+			if (obj->symtab)
+				return ENOTSUP;
+
+			obj->symtab = (ElfW(Sym) *) obj->dynamic[p].d_un.d_ptr;
+		}
+		p++;
+	}
+
+	if ((!obj->strtab) | (!obj->hash_table) | (!obj->symtab))
+		return ENOTSUP;
+
 	*objptr = obj;
 	return 0;
 }
 
-int eh_load_obj(eh_obj_t *obj)
+int eh_find_sym(eh_obj_t *obj, const char *sym, void **to)
 {
-	/* Everything except section headers are present in memory
-	   and accessible using PT_DYNAMIC segment. Unfortunately
-	   shnum is critical to find_sym(), so reading some data
-	   from file is unavoidable */
-	FILE *bin_h;
-	
-	if ((bin_h = fopen(obj->name, "r")) == NULL)
-		return errno;
-	
-	/* ELF header */
-	obj->ehdr = (ElfW(Ehdr) *) malloc(sizeof(ElfW(Ehdr)));
-	fseek(bin_h, 0, SEEK_SET);
-	fread(obj->ehdr, 1, sizeof(ElfW(Ehdr)), bin_h);
-	
-	/* section headers */
-	obj->shnum = obj->ehdr->e_shnum;
-	obj->shdr = (ElfW(Shdr) *) malloc(sizeof(ElfW(Shdr)) * obj->shnum);
-	fseek(bin_h, obj->ehdr->e_shoff, SEEK_SET);
-	fread(obj->shdr, 1, sizeof(ElfW(Shdr)) * obj->shnum, bin_h);
-	
-	/* section header name table */
-	obj->shstr = (char *) malloc(obj->shdr[obj->ehdr->e_shstrndx].sh_size);
-	fseek(bin_h, obj->shdr[obj->ehdr->e_shstrndx].sh_offset, SEEK_SET);
-	fread(obj->shstr, 1, obj->shdr[obj->ehdr->e_shstrndx].sh_size, bin_h);
-	
-	fclose(bin_h);
-	return 0;
-}
+	/*
+	 http://docsrv.sco.com/SDK_cprog/_Dynamic_Linker.html#objfiles_Fb
+	 states that "The number of symbol table entries should equal nchain".
 
-int eh_find_shdr(eh_obj_t *obj, const char *name, ElfW(Shdr) **shdrptr)
-{
+	 'nchain' is the second item in DT_HASH.
+	*/
+	ElfW_Sword symnum = obj->hash_table[1];
 	int i;
-	for (i = 0; i < obj->shnum; i++) {
-		if (!strcmp(name, &obj->shstr[obj->shdr[i].sh_name])) {
-			*shdrptr = &obj->shdr[i];
+
+	for (i = 0; i < symnum; i++) {
+		if (!obj->symtab[i].st_name)
+			continue;
+
+		if (!strcmp(&obj->strtab[obj->symtab[i].st_name], sym)) {
+			*to = (void *) (obj->symtab[i].st_value + obj->addr);
 			return 0;
 		}
 	}
-	
+
 	return EAGAIN;
 }
 
-int eh_find_sym(eh_obj_t *obj, const char *sym, void **to)
+int eh_find_next_dyn(eh_obj_t *obj, ElfW_Sword tag, int i, ElfW(Dyn) **next)
 {
-	/* just loop thru .symtab and return possible match */
-	int i;
-	for (i = 0; i < obj->symnum; i++) {
-		if (!obj->dynsym[i].st_name)
-			continue;
-		
-		if (!strcmp(sym, &obj->symtab[obj->dynsym[i].st_name])) {
-			*to = (void *) (obj->dynsym[i].st_value + obj->addr);
+	/* first from i + 1 to end, then from start to i - 1 */
+	int p;
+	*next = NULL;
+
+	p = i + 1;
+	while (obj->dynamic[p].d_tag != DT_NULL) {
+		if (obj->dynamic[p].d_tag == tag) {
+			*next = &obj->dynamic[p];
 			return 0;
 		}
+		p++;
 	}
-	
+
+	p = 0;
+	while ((obj->dynamic[i].d_tag != DT_NULL) && (p < i)) {
+		if (obj->dynamic[p].d_tag == tag) {
+			*next = &obj->dynamic[p];
+			return 0;
+		}
+		p++;
+	}
+
 	return EAGAIN;
 }
 
 int eh_set_rel(eh_obj_t *obj, const char *sym, void *val)
 {
-	/* relocations can be in .rel.plt or .rela.plt */
-	ElfW(Shdr) *shdr;
+	/*
+	 Elf spec states that object is allowed to have multiple
+	 .rel.plt and .rela.plt tables, so we will support 'em - here.
+	*/
 	ElfW(Rel) *rel;
 	ElfW(Rela) *rela;
-	int i;
-	
-	if (!eh_find_shdr(obj, ".rel.plt", &shdr)) {
-		rel = (ElfW(Rel) *) (shdr->sh_addr + obj->addr);
-		
-		for (i = 0; i < shdr->sh_size / sizeof(ElfW(Rel)); i++) {
-			if (!strcmp(&obj->symtab[obj->dynsym[ELFW_R_SYM(rel[i].r_info)].st_name], sym))
-				*((void **) (rel[i].r_offset + obj->addr)) = val;
-		}
-	}
-	
-	if (!eh_find_shdr(obj, ".rela.plt", &shdr)) {
-		rela = (ElfW(Rela) *) (shdr->sh_addr + obj->addr);
-		
-		for (i = 0; i < shdr->sh_size / sizeof(ElfW(Rela)); i++) {
+	ElfW(Dyn) *relsize, *relentsize;
+	int i, p;
 
-			if (!strcmp(&obj->symtab[obj->dynsym[ELFW_R_SYM(rela[i].r_info)].st_name], sym))
-				*((void **) (rela[i].r_offset + obj->addr)) = val;
+	/* relocations can be in .rel.plt or .rela.plt */
+	p = 0;
+	while (obj->dynamic[p].d_tag != DT_NULL) {
+		if (obj->dynamic[p].d_tag == DT_REL) {
+			/* .rel.plt */
+			rel = (ElfW(Rel) *) obj->dynamic[p].d_un.d_ptr;
+			if (!eh_find_next_dyn(obj, DT_RELSZ, p, &relsize))
+				return EINVAL; /* b0rken elf :/ */
+			if (!eh_find_next_dyn(obj, DT_RELENT, p, &relentsize))
+				return EINVAL;
+
+			for (i = 0; i < relsize->d_un.d_val / relentsize->d_un.d_val; i++) {
+				if (!obj->symtab[ELFW_R_SYM(rel[i].r_info)].st_name)
+					continue;
+
+				if (!strcmp(&obj->strtab[obj->symtab[ELFW_R_SYM(rel[i].r_info)].st_name], sym))
+					*((void **) (rel[i].r_offset + obj->addr)) = val;
+			}
+		} else if (obj->dynamic[p].d_tag == DT_RELA) {
+			/* .rela.plt */
+			rela = (ElfW(Rela) *) obj->dynamic[p].d_un.d_ptr;
+
+			if (eh_find_next_dyn(obj, DT_RELASZ, p, &relsize))
+				return EINVAL; /* b0rken elf :/ */
+			if (eh_find_next_dyn(obj, DT_RELAENT, p, &relentsize))
+				return EINVAL;
+
+			for (i = 0; i < relsize->d_un.d_val / relentsize->d_un.d_val; i++) {
+				if (!obj->symtab[ELFW_R_SYM(rela[i].r_info)].st_name)
+					continue;
+
+				if (!strcmp(&obj->strtab[obj->symtab[ELFW_R_SYM(rela[i].r_info)].st_name], sym))
+					*((void **) (rel[i].r_offset + obj->addr)) = val;
+			}
 		}
-	
+		p++;
 	}
-	
+
 	return 0;
 }
 
 int eh_free_obj(eh_obj_t *obj)
 {
-	free(obj->ehdr);
-	free(obj->shdr);
-	free(obj->shstr);
 	free(obj);
-	
+
 	return 0;
 }
 
