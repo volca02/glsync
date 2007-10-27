@@ -28,26 +28,24 @@ void *(*__dlsym)(void *, const char *) = NULL;
  */
 void get_real_functions()
 {
-	eh_obj_t *libdl;
+	eh_obj_t libdl;
 	
-	if (eh_find_obj("*libdl.so*", &libdl)) {
+	if (eh_init_obj(&libdl, "*libdl.so*")) {
 		fprintf(stderr, "can't get libdl.so\n");
 		exit(1);
 	}
 
-	eh_set_rel(libdl, "foobar", NULL);
-
-	if (eh_find_sym(libdl, "dlopen", (void **) &__dlopen)) {
+	if (eh_find_sym(&libdl, "dlopen", (void **) &__dlopen)) {
 		fprintf(stderr, "can't get dlopen()\n");
 		exit(1);
 	}
 
-	if (eh_find_sym(libdl, "dlsym", (void **) &__dlsym)) {
+	if (eh_find_sym(&libdl, "dlsym", (void **) &__dlsym)) {
 		fprintf(stderr, "can't get dlsym()\n");
 		exit(1);
 	}
 
-	eh_free_obj(libdl);
+	eh_destroy_obj(&libdl);
 }
 
 /**

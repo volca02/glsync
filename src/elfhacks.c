@@ -49,6 +49,9 @@ int eh_phdr_callback(struct dl_phdr_info *info, size_t size, void *argptr);
 int eh_load_obj(eh_obj_t *obj);
 int eh_find_next_dyn(eh_obj_t *obj, ElfW_Sword tag, int i, ElfW(Dyn) **next);
 
+int eh_set_rela_plt(eh_obj_t *obj, int p, const char *sym, void *val);
+int eh_set_rel_plt(eh_obj_t *obj, int p, const char *sym, void *val);
+
 int eh_phdr_callback(struct dl_phdr_info *info, size_t size, void *argptr)
 {
 	eh_obj_t *find = (eh_obj_t *) argptr;
@@ -72,19 +75,15 @@ int eh_phdr_callback(struct dl_phdr_info *info, size_t size, void *argptr)
 	return 0;
 }
 
-int eh_find_obj(const char *search, eh_obj_t **objptr)
+int eh_init_obj(eh_obj_t *obj, const char *soname)
 {
 	/* This function uses glibc-specific dl_iterate_phdr().
 	   Another way could be parsing /proc/self/exe or using
 	   pmap() on Solaris or *BSD */
-	eh_obj_t *obj;
 	int p;
-	*objptr = NULL;
 
-	if ((obj = (eh_obj_t *) malloc(sizeof(eh_obj_t))) == NULL)
-		return ENOMEM;
-
-	obj->name = search;
+	obj->phdr = NULL;
+	obj->name = soname;
 	dl_iterate_phdr(eh_phdr_callback, obj);
 
 	if (!obj->phdr)
@@ -150,7 +149,6 @@ int eh_find_obj(const char *search, eh_obj_t **objptr)
 	if ((!obj->strtab) | (!obj->hash_table) | (!obj->symtab))
 		return ENOTSUP;
 
-	*objptr = obj;
 	return 0;
 }
 
@@ -176,6 +174,22 @@ int eh_find_sym(eh_obj_t *obj, const char *sym, void **to)
 	}
 
 	return EAGAIN;
+}
+
+int eh_set_sym(eh_obj_t *obj, const char *sym, void *to)
+{
+	ElfW_Sword symnum = obj->hash_table[1];
+	int i;
+
+	for (i = 0; i < symnum; i++) {
+		if (!obj->symtab[i].st_name)
+			continue;
+
+		if (!strcmp(&obj->strtab[obj->symtab[i].st_name], sym))
+			*((void **) (obj->symtab[i].st_value + obj->addr)) = to;
+	}
+
+	return 0;
 }
 
 int eh_find_next_dyn(eh_obj_t *obj, ElfW_Sword tag, int i, ElfW(Dyn) **next)
@@ -205,51 +219,70 @@ int eh_find_next_dyn(eh_obj_t *obj, ElfW_Sword tag, int i, ElfW(Dyn) **next)
 	return EAGAIN;
 }
 
+int eh_set_rela_plt(eh_obj_t *obj, int p, const char *sym, void *val)
+{
+	ElfW(Rela) *rela = (ElfW(Rela) *) obj->dynamic[p].d_un.d_ptr;
+	ElfW(Dyn) *relasize;
+	int i;
+
+	/* DT_PLTRELSZ contains PLT relocs size in bytes */
+	if (eh_find_next_dyn(obj, DT_PLTRELSZ, p, &relasize))
+		return EINVAL; /* b0rken elf :/ */
+
+	for (i = 0; i < relasize->d_un.d_val / sizeof(ElfW(Rela)); i++) {
+		if (!obj->symtab[ELFW_R_SYM(rela[i].r_info)].st_name)
+			continue;
+
+		if (!strcmp(&obj->strtab[obj->symtab[ELFW_R_SYM(rela[i].r_info)].st_name], sym))
+			*((void **) (rela[i].r_offset + obj->addr)) = val;
+	}
+
+	return 0;
+}
+
+int eh_set_rel_plt(eh_obj_t *obj, int p, const char *sym, void *val)
+{
+	ElfW(Rel) *rel = (ElfW(Rel) *) obj->dynamic[p].d_un.d_ptr;
+	ElfW(Dyn) *relsize;
+	int i;
+
+	if (eh_find_next_dyn(obj, DT_PLTRELSZ, p, &relsize))
+		return EINVAL; /* b0rken elf :/ */
+
+	for (i = 0; i < relsize->d_un.d_val / sizeof(ElfW(Rela)); i++) {
+		if (!obj->symtab[ELFW_R_SYM(rel[i].r_info)].st_name)
+			continue;
+
+		if (!strcmp(&obj->strtab[obj->symtab[ELFW_R_SYM(rel[i].r_info)].st_name], sym))
+			*((void **) (rel[i].r_offset + obj->addr)) = val;
+	}
+
+	return 0;
+}
+
 int eh_set_rel(eh_obj_t *obj, const char *sym, void *val)
 {
 	/*
 	 Elf spec states that object is allowed to have multiple
 	 .rel.plt and .rela.plt tables, so we will support 'em - here.
 	*/
-	ElfW(Rel) *rel;
-	ElfW(Rela) *rela;
-	ElfW(Dyn) *relsize, *relentsize;
-	int i, p;
+	ElfW(Dyn) *pltrel;
+	int ret, p = 0;
 
-	/* relocations can be in .rel.plt or .rela.plt */
-	p = 0;
 	while (obj->dynamic[p].d_tag != DT_NULL) {
-		if (obj->dynamic[p].d_tag == DT_REL) {
-			/* .rel.plt */
-			rel = (ElfW(Rel) *) obj->dynamic[p].d_un.d_ptr;
-			if (!eh_find_next_dyn(obj, DT_RELSZ, p, &relsize))
-				return EINVAL; /* b0rken elf :/ */
-			if (!eh_find_next_dyn(obj, DT_RELENT, p, &relentsize))
+		/* DT_JMPREL contains .rel.plt or .rela.plt */
+		if (obj->dynamic[p].d_tag == DT_JMPREL) {
+			/* DT_PLTREL tells if it is Rela or Rel */
+			eh_find_next_dyn(obj, DT_PLTREL, p, &pltrel);
+
+			if (pltrel->d_un.d_val == DT_RELA) {
+				if ((ret = eh_set_rela_plt(obj, p, sym, val)))
+					return ret;
+			} else if (pltrel->d_un.d_val == DT_REL) {
+				if ((ret = eh_set_rel_plt(obj, p, sym, val)))
+					return ret;
+			} else
 				return EINVAL;
-
-			for (i = 0; i < relsize->d_un.d_val / relentsize->d_un.d_val; i++) {
-				if (!obj->symtab[ELFW_R_SYM(rel[i].r_info)].st_name)
-					continue;
-
-				if (!strcmp(&obj->strtab[obj->symtab[ELFW_R_SYM(rel[i].r_info)].st_name], sym))
-					*((void **) (rel[i].r_offset + obj->addr)) = val;
-			}
-		} else if (obj->dynamic[p].d_tag == DT_RELA) {
-			/* .rela.plt */
-			rela = (ElfW(Rela) *) obj->dynamic[p].d_un.d_ptr;
-
-			if (eh_find_next_dyn(obj, DT_RELASZ, p, &relsize))
-				return EINVAL; /* b0rken elf :/ */
-			if (eh_find_next_dyn(obj, DT_RELAENT, p, &relentsize))
-				return EINVAL;
-
-			for (i = 0; i < relsize->d_un.d_val / relentsize->d_un.d_val; i++) {
-				if (!obj->symtab[ELFW_R_SYM(rela[i].r_info)].st_name)
-					continue;
-
-				if (!strcmp(&obj->strtab[obj->symtab[ELFW_R_SYM(rela[i].r_info)].st_name], sym))
-					*((void **) (rel[i].r_offset + obj->addr)) = val;
-			}
 		}
 		p++;
 	}
@@ -257,9 +290,9 @@ int eh_set_rel(eh_obj_t *obj, const char *sym, void *val)
 	return 0;
 }
 
-int eh_free_obj(eh_obj_t *obj)
+int eh_destroy_obj(eh_obj_t *obj)
 {
-	free(obj);
+	obj->phdr = NULL;
 
 	return 0;
 }

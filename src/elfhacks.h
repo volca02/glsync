@@ -66,17 +66,17 @@ typedef struct {
 } eh_obj_t;
 
 /**
- * \brief Finds object in memory and creates eh_obj_t for it.
+ * \brief Initializes eh_obj_t for given soname
  *
  * Matching is done using fnmatch() so wildcards and other standard
  * filename metacharacters and expressions work.
  *
- * If search is NULL, this function returns the main program object.
- * \param search object's soname (see /proc/pid/maps) or NULL for main
+ * If soname is NULL, this function returns the main program object.
+ * \param soname object's soname (see /proc/pid/maps) or NULL for main
  * \param objptr returned pointer
  * \return 0 on success otherwise a positive error code
 */
-extern int eh_find_obj(const char *search, eh_obj_t **objptr);
+extern int eh_init_obj(eh_obj_t *obj, const char *soname);
 
 /**
  * \brief Finds symbol in object's .dynsym and retrvieves its value.
@@ -98,11 +98,11 @@ extern int eh_find_sym(eh_obj_t *obj, const char *sym, void **to);
 extern int eh_set_rel(eh_obj_t *obj, const char *sym, void *val);
 
 /**
- * \brief Frees eh_obj_t created using eh_find_obj().
+ * \brief Destroy eh_obj_t object.
  * \param obj elfhacks program object
  * \return 0 on success otherwise a positive error code
 */
-extern int eh_free_obj(eh_obj_t *obj);
+extern int eh_destroy_obj(eh_obj_t *obj);
 
 /** \} */
 
