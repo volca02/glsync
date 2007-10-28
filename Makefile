@@ -4,6 +4,7 @@ CC = gcc
 
 CFLAGS = -g -Wall -ansi -D_XOPEN_SOURCE=500
 LDFLAGS = -Wall -ansi
+VISIBILITY = -fvisibility=hidden
 
 MLIBDIR = lib
 DESTDIR = 
@@ -32,7 +33,7 @@ $(BUILD)/libelfhacks.a: $(BUILD)/elfhacks.o
 	ar crs $(BUILD)/libelfhacks.a $(BUILD)/elfhacks.o
 
 $(BUILD)/elfhacks.o: $(BUILD) $(SRC)/elfhacks.c $(SRC)/elfhacks.h
-	$(CC) $(CFLAGS) -fPIC -o $(BUILD)/elfhacks.o -c $(SRC)/elfhacks.c
+	$(CC) $(CFLAGS) $(VISIBILITY) -fPIC -o $(BUILD)/elfhacks.o -c $(SRC)/elfhacks.c
 
 $(BUILD)/elfhacks.h: $(BUILD) $(SRC)/elfhacks.h
 	cp $(SRC)/elfhacks.h $(BUILD)/elfhacks.h

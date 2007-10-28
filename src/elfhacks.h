@@ -36,6 +36,8 @@
 extern "C" {
 #endif
 
+#define __PUBLIC __attribute__ ((visibility ("default")))
+
 /**
  *  \defgroup elfhacks elfhacks
  *  Elfhacks is a collection of functions that aim for retvieving
@@ -76,7 +78,7 @@ typedef struct {
  * \param objptr returned pointer
  * \return 0 on success otherwise a positive error code
 */
-extern int eh_init_obj(eh_obj_t *obj, const char *soname);
+__PUBLIC int eh_init_obj(eh_obj_t *obj, const char *soname);
 
 /**
  * \brief Finds symbol in object's .dynsym and retrvieves its value.
@@ -85,7 +87,7 @@ extern int eh_init_obj(eh_obj_t *obj, const char *soname);
  * \param to returned value
  * \return 0 on success otherwise a positive error code
 */
-extern int eh_find_sym(eh_obj_t *obj, const char *sym, void **to);
+__PUBLIC int eh_find_sym(eh_obj_t *obj, const char *sym, void **to);
 
 /**
  * \brief Iterates through object's .rel.plt and .rela.plt and sets every
@@ -95,14 +97,14 @@ extern int eh_find_sym(eh_obj_t *obj, const char *sym, void **to);
  * \param val new value
  * \return 0 on success otherwise a positive error code
 */
-extern int eh_set_rel(eh_obj_t *obj, const char *sym, void *val);
+__PUBLIC int eh_set_rel(eh_obj_t *obj, const char *sym, void *val);
 
 /**
  * \brief Destroy eh_obj_t object.
  * \param obj elfhacks program object
  * \return 0 on success otherwise a positive error code
 */
-extern int eh_destroy_obj(eh_obj_t *obj);
+__PUBLIC int eh_destroy_obj(eh_obj_t *obj);
 
 /** \} */
 
