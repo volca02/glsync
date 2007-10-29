@@ -137,7 +137,6 @@ int eh_check_addr(eh_obj_t *obj, void *addr)
 		}
 	}
 
-	printf("addr %p not valid\n", addr);
 	return EINVAL;
 }
 
