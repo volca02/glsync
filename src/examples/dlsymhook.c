@@ -30,7 +30,7 @@ void get_real_functions()
 {
 	eh_obj_t libdl;
 	
-	if (eh_init_obj(&libdl, "*libdl.so*")) {
+	if (eh_find_obj(&libdl, "*libdl.so*")) {
 		fprintf(stderr, "can't get libdl.so\n");
 		exit(1);
 	}

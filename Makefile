@@ -13,11 +13,11 @@ SRC = src
 EXAMPLES = $(SRC)/examples
 
 VERSION=0
-RELEASE=$(VERSION).2.1
+RELEASE=$(VERSION).3.0
 
 all: $(BUILD)/libelfhacks.so.$(RELEASE) $(BUILD)/elfhacks.h
 
-examples: $(BUILD)/dlsymhook.so
+examples: $(BUILD)/dlsymhook.so $(BUILD)/ldinfo.so
 
 static: $(BUILD)/libelfhacks.a
 
@@ -41,6 +41,9 @@ $(BUILD)/elfhacks.h: $(BUILD) $(SRC)/elfhacks.h
 $(BUILD)/dlsymhook.so: $(BUILD) $(EXAMPLES)/dlsymhook.c $(BUILD)/libelfhacks.so.$(RELEASE)
 	$(CC) $(CFLAGS) $(LDFLAGS) -Wl,-soname,dlsymhook.so -fPIC -shared -L$(BUILD) -I$(BUILD) -lelfhacks $(EXAMPLES)/dlsymhook.c -o $(BUILD)/dlsymhook.so
 
+$(BUILD)/ldinfo.so: $(BUILD) $(EXAMPLES)/ldinfo.c $(BUILD)/libelfhacks.so.$(RELEASE)
+	$(CC) $(CFLAGS) $(LDFLAGS) -Wl,-soname,ldinfo.so -fPIC -shared -L$(BUILD) -I$(BUILD) -lelfhacks $(EXAMPLES)/ldinfo.c -o $(BUILD)/ldinfo.so
+
 install: $(BUILD)/libelfhacks.so.$(RELEASE) $(BUILD)/elfhacks.h
 	install -Dm 0755 $(BUILD)/libelfhacks.so.$(RELEASE) $(DESTDIR)/usr/$(MLIBDIR)/libelfhacks.so.$(RELEASE)
 	ln -sf libelfhacks.so.$(RELEASE) $(DESTDIR)/usr/$(MLIBDIR)/libelfhacks.so.$(VERSION)
@@ -58,4 +61,4 @@ clean:
 	rm -f $(BUILD)/elfhacks.o
 	rm -f $(BUILD)/libelfhacks.so $(BUILD)/libelfhacks.so.$(VERSION) $(BUILD)/libelfhacks.so.$(RELEASE)
 	rm -f $(BUILD)/libelfhacks.a $(BUILD)/elfhacks.h
-	rm -f $(BUILD)/dlsymhook.so
+	rm -f $(BUILD)/dlsymhook.so $(BUILD)/ldinfo.so

@@ -38,6 +38,25 @@ extern "C" {
 
 #define __PUBLIC __attribute__ ((visibility ("default")))
 
+#ifdef __x86_64__
+# define __elf64
+#endif
+#ifdef __i386__
+# define __elf32
+#endif
+
+#ifdef __elf64
+# define ELFW_R_SYM ELF64_R_SYM
+# define ElfW_Sword Elf64_Sxword
+#else
+# ifdef __elf32
+#  define ELFW_R_SYM ELF32_R_SYM
+#  define ElfW_Sword Elf32_Sword
+# else
+#  error neither __elf32 nor __elf64 is defined
+# endif
+#endif
+
 /**
  *  \defgroup elfhacks elfhacks
  *  Elfhacks is a collection of functions that aim for retvieving
@@ -61,11 +80,52 @@ typedef struct {
 	ElfW(Dyn) *dynamic;
 	/** .symtab */
 	ElfW(Sym) *symtab;
+	/** number of entries in .symtab */
+	ElfW_Sword symnum;
 	/** .strtab */
 	const char *strtab;
 	/** symbol hash table */
 	ElfW(Word) *hash_table;
 } eh_obj_t;
+
+/**
+ * \brief elfhacks symbol
+ */
+typedef struct {
+	/** symbol name */
+	const char *name;
+	/** corresponding ElfW(Sym) */
+	ElfW(Sym) *sym;
+	/** elfhacks object this symbol is associated to */
+	eh_obj_t *obj;
+} eh_sym_t;
+
+/**
+ * \brief elfhacks relocation
+ */
+typedef struct {
+	/** symbol this relocation is associated to */
+	eh_sym_t *sym;
+	/** corresponding ElfW(Rel) (NULL if this is Rela) */
+	ElfW(Rel) *rel;
+	/** corresponding ElfW(Rela) (NULL if this is Rel) */
+	ElfW(Rela) *rela;
+	/** elfhacks program object */
+	eh_obj_t *obj;
+} eh_rel_t;
+
+/**
+ * \brief Iterate objects callback
+ */
+typedef int (*eh_iterate_obj_callback_func)(eh_obj_t *obj, void *arg);
+/**
+ * \brief Iterate symbols callback
+ */
+typedef int (*eh_iterate_sym_callback_func)(eh_sym_t *sym, void *arg);
+/**
+ * \brief Iterate relocations callback
+ */
+typedef int (*eh_iterate_rel_callback_func)(eh_rel_t *rel, void *arg);
 
 /**
  * \brief Initializes eh_obj_t for given soname
@@ -78,7 +138,15 @@ typedef struct {
  * \param objptr returned pointer
  * \return 0 on success otherwise a positive error code
 */
-__PUBLIC int eh_init_obj(eh_obj_t *obj, const char *soname);
+__PUBLIC int eh_find_obj(eh_obj_t *obj, const char *soname);
+
+/**
+ * \brief Walk through list of objects
+ * \param callback callback function
+ * \param arg argument passed to callback function
+ * \return 0 on success otherwise an error code
+ */
+__PUBLIC int eh_iterate_obj(eh_iterate_obj_callback_func callback, void *arg);
 
 /**
  * \brief Finds symbol in object's .dynsym and retrvieves its value.
@@ -90,6 +158,15 @@ __PUBLIC int eh_init_obj(eh_obj_t *obj, const char *soname);
 __PUBLIC int eh_find_sym(eh_obj_t *obj, const char *sym, void **to);
 
 /**
+ * \brief Walk through list of symbols in object
+ * \param obj elfhacks program object
+ * \param callback callback function
+ * \param arg argument passed to callback function
+ * \return 0 on success otherwise an error code
+ */
+__PUBLIC int eh_iterate_sym(eh_obj_t *obj, eh_iterate_sym_callback_func callback, void *arg);
+
+/**
  * \brief Iterates through object's .rel.plt and .rela.plt and sets every
  *        occurrence of some symbol to the specified value.
  * \param obj elfhacks program object
@@ -98,6 +175,14 @@ __PUBLIC int eh_find_sym(eh_obj_t *obj, const char *sym, void **to);
  * \return 0 on success otherwise a positive error code
 */
 __PUBLIC int eh_set_rel(eh_obj_t *obj, const char *sym, void *val);
+
+/**
+ * \brief Walk through object's .rel.plt and .rela.plt
+ * \param obj elfhacks program object
+ * \param callback callback function
+ * \param arg argument passed to callback function
+ */
+__PUBLIC int eh_iterate_rel(eh_obj_t *obj, eh_iterate_rel_callback_func callback, void *arg);
 
 /**
  * \brief Destroy eh_obj_t object.
