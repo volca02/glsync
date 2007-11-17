@@ -311,7 +311,7 @@ int eh_set_rel_plt(eh_obj_t *obj, int p, const char *sym, void *val)
 	if (eh_find_next_dyn(obj, DT_PLTRELSZ, p, &relsize))
 		return EINVAL; /* b0rken elf :/ */
 
-	for (i = 0; i < relsize->d_un.d_val / sizeof(ElfW(Rela)); i++) {
+	for (i = 0; i < relsize->d_un.d_val / sizeof(ElfW(Rel)); i++) {
 		if (!obj->symtab[ELFW_R_SYM(rel[i].r_info)].st_name)
 			continue;
 
