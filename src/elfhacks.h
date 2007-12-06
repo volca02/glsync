@@ -80,12 +80,12 @@ typedef struct {
 	ElfW(Dyn) *dynamic;
 	/** .symtab */
 	ElfW(Sym) *symtab;
-	/** number of entries in .symtab */
-	ElfW_Sword symnum;
 	/** .strtab */
 	const char *strtab;
-	/** symbol hash table */
-	ElfW(Word) *hash_table;
+	/** symbol hash table (DT_HASH) */
+	ElfW(Word) *hash;
+	/** symbol hash table (DT_GNU_HASH) */
+	Elf32_Word *gnu_hash;
 } eh_obj_t;
 
 /**
@@ -151,11 +151,11 @@ __PUBLIC int eh_iterate_obj(eh_iterate_obj_callback_func callback, void *arg);
 /**
  * \brief Finds symbol in object's .dynsym and retrvieves its value.
  * \param obj elfhacks program object
- * \param sym symbol to find
+ * \param name symbol to find
  * \param to returned value
  * \return 0 on success otherwise a positive error code
 */
-__PUBLIC int eh_find_sym(eh_obj_t *obj, const char *sym, void **to);
+__PUBLIC int eh_find_sym(eh_obj_t *obj, const char *name, void **to);
 
 /**
  * \brief Walk through list of symbols in object

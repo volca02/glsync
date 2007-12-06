@@ -42,6 +42,12 @@ int eh_set_rel_plt(eh_obj_t *obj, int p, const char *sym, void *val);
 int eh_iterate_rela_plt(eh_obj_t *obj, int p, eh_iterate_rel_callback_func callback, void *arg);
 int eh_iterate_rel_plt(eh_obj_t *obj, int p, eh_iterate_rel_callback_func callback, void *arg);
 
+int eh_find_sym_hash(eh_obj_t *obj, const char *name, eh_sym_t *sym);
+int eh_find_sym_gnu_hash(eh_obj_t *obj, const char *name, eh_sym_t *sym);
+
+ElfW(Word) eh_hash_elf(const char *name);
+Elf32_Word eh_hash_gnu(const char *name);
+
 int eh_find_callback(struct dl_phdr_info *info, size_t size, void *argptr)
 {
 	eh_obj_t *find = (eh_obj_t *) argptr;
@@ -177,7 +183,8 @@ int eh_init_obj(eh_obj_t *obj)
 	 Maybe st_shndx is the key here?
 	*/
 	obj->strtab = NULL;
-	obj->hash_table = NULL;
+	obj->hash = NULL;
+	obj->gnu_hash = NULL;
 	obj->symtab = NULL;
 	p = 0;
 	while (obj->dynamic[p].d_tag != DT_NULL) {
@@ -187,10 +194,15 @@ int eh_init_obj(eh_obj_t *obj)
 
 			obj->strtab = (const char *) obj->dynamic[p].d_un.d_ptr;
 		} else if (obj->dynamic[p].d_tag == DT_HASH) {
-			if (obj->hash_table)
+			if (obj->hash)
 				return ENOTSUP;
 
-			obj->hash_table = (ElfW(Word) *) obj->dynamic[p].d_un.d_ptr;
+			obj->hash = (ElfW(Word) *) obj->dynamic[p].d_un.d_ptr;
+		} else if (obj->dynamic[p].d_tag == DT_GNU_HASH) {
+			if (obj->gnu_hash)
+				return ENOTSUP;
+
+			obj->gnu_hash = (Elf32_Word *) obj->dynamic[p].d_un.d_ptr;
 		} else if (obj->dynamic[p].d_tag == DT_SYMTAB) {
 			if (obj->symtab)
 				return ENOTSUP;
@@ -202,31 +214,38 @@ int eh_init_obj(eh_obj_t *obj)
 
 	/* This is here to catch b0rken headers (vdso) */
 	if ((eh_check_addr(obj, (void *) obj->strtab)) |
-	    (eh_check_addr(obj, (void *) obj->hash_table)) |
 	    (eh_check_addr(obj, (void *) obj->symtab)))
 		return ENOTSUP;
 
-	/*
-	 http://docsrv.sco.com/SDK_cprog/_Dynamic_Linker.html#objfiles_Fb
-	 states that "The number of symbol table entries should equal nchain".
-
-	 'nchain' is the second item in DT_HASH.
-	*/
-	obj->symnum = obj->hash_table[1];
+	if (obj->hash) {
+		/* DT_HASH found */
+		if (eh_check_addr(obj, (void *) obj->hash))
+			obj->hash = NULL;
+	} else if (obj->gnu_hash) {
+		/* DT_GNU_HASH found */
+		if (eh_check_addr(obj, (void *) obj->gnu_hash))
+			obj->gnu_hash = NULL;
+	}
 
 	return 0;
 }
 
-int eh_find_sym(eh_obj_t *obj, const char *sym, void **to)
+int eh_find_sym(eh_obj_t *obj, const char *name, void **to)
 {
-	int i;
+	eh_sym_t sym;
 
-	for (i = 0; i < obj->symnum; i++) {
-		if (!obj->symtab[i].st_name)
-			continue;
+	/* DT_GNU_HASH is faster ;) */
+	if (obj->gnu_hash) {
+		if (!eh_find_sym_gnu_hash(obj, name, &sym)) {
+			*to = (void *) (sym.sym->st_value + obj->addr);
+			return 0;
+		}
+	}
 
-		if (!strcmp(&obj->strtab[obj->symtab[i].st_name], sym)) {
-			*to = (void *) (obj->symtab[i].st_value + obj->addr);
+	/* maybe it is in DT_HASH or DT_GNU_HASH is not present */
+	if (obj->hash) {
+		if (!eh_find_sym_hash(obj, name, &sym)) {
+			*to = (void *) (sym.sym->st_value + obj->addr);
 			return 0;
 		}
 	}
@@ -234,24 +253,167 @@ int eh_find_sym(eh_obj_t *obj, const char *sym, void **to)
 	return EAGAIN;
 }
 
-int eh_iterate_sym(eh_obj_t *obj, eh_iterate_sym_callback_func callback, void *arg)
+ElfW(Word) eh_hash_elf(const char *name)
 {
-	eh_sym_t sym;
-	int ret, i;
+	ElfW(Word) tmp, hash = 0;
+	const unsigned char *uname = (const unsigned char *) name;
+	int c;
 
-	sym.obj = obj;
-	for (i = 0; i < obj->symnum; i++) {
-		sym.sym = &obj->symtab[i];
-		if (sym.sym->st_name)
-			sym.name = &obj->strtab[sym.sym->st_name];
-		else
-			sym.name = NULL;
-
-		if ((ret = callback(&sym, arg)))
-			return ret;
+	while ((c = *uname++) != '\0') {
+		hash = (hash << 4) + c;
+		if ((tmp = (hash & 0xf0000000)) != 0) {
+			hash ^= tmp >> 24;
+			hash ^= tmp;
+		}
 	}
 
+	return hash;
+}
+
+int eh_find_sym_hash(eh_obj_t *obj, const char *name, eh_sym_t *sym)
+{
+	ElfW(Word) hash, *chain;
+	ElfW(Sym) *esym;
+	unsigned int bucket_idx, idx;
+
+	if (!obj->hash)
+		return ENOTSUP;
+
+	if (obj->hash[0] == 0)
+		return EAGAIN;
+
+	hash = eh_hash_elf(name);
+	/*
+	 First item in DT_HASH is nbucket, second is nchain.
+	 hash % nbucket gives us our bucket index.
+	*/
+	bucket_idx = obj->hash[2 + (hash % obj->hash[0])];
+	chain = &obj->hash[2 + obj->hash[0] + bucket_idx];
+
+	idx = 0;
+	sym->sym = NULL;
+
+	/* we have to check symtab[bucket_idx] first */
+	esym = &obj->symtab[bucket_idx];
+	if (esym->st_name) {
+		if (!strcmp(&obj->strtab[esym->st_name], name))
+			sym->sym = esym;
+	}
+
+	while ((sym->sym == NULL) &&
+	       (chain[idx] != STN_UNDEF)) {
+		esym = &obj->symtab[chain[idx]];
+
+		if (esym->st_name) {
+			if (!strcmp(&obj->strtab[esym->st_name], name))
+				sym->sym = esym;
+		}
+
+		idx++;
+	}
+
+	/* symbol not found */
+	if (sym->sym == NULL)
+		return EAGAIN;
+
+	sym->obj = obj;
+	sym->name = &obj->strtab[sym->sym->st_name];
+
 	return 0;
+}
+
+Elf32_Word eh_hash_gnu(const char *name)
+{
+	Elf32_Word hash = 5381;
+	const unsigned char *uname = (const unsigned char *) name;
+	int c;
+
+	while ((c = *uname++) != '\0')
+		hash = (hash << 5) + hash + c;
+
+	return hash & 0xffffffff;
+}
+
+int eh_find_sym_gnu_hash(eh_obj_t *obj, const char *name, eh_sym_t *sym)
+{
+	Elf32_Word *buckets, *chain_zero, *hasharr;
+	ElfW(Addr) *bitmask, bitmask_word;
+	Elf32_Word symbias, bitmask_nwords, bucket,
+		   nbuckets, bitmask_idxbits, shift;
+	Elf32_Word hash, hashbit1, hashbit2;
+	ElfW(Sym) *esym;
+
+	if (!obj->gnu_hash)
+		return ENOTSUP;
+
+	if (obj->gnu_hash[0] == 0)
+		return EAGAIN;
+
+	sym->sym = NULL;
+
+	/*
+	 Initialize our hash table stuff
+
+	 DT_GNU_HASH is(?):
+	 [nbuckets] [symbias] [bitmask_nwords] [shift]
+	 [bitmask_nwords * ElfW(Addr)] <- bitmask
+	 [nbuckets * Elf32_Word] <- buckets
+	 ...chains? - symbias...
+	 */
+	nbuckets = obj->gnu_hash[0];
+	symbias = obj->gnu_hash[1];
+	bitmask_nwords = obj->gnu_hash[2]; /* must be power of two */
+	bitmask_idxbits = bitmask_nwords - 1;
+	shift = obj->gnu_hash[3];
+	bitmask = (ElfW(Addr) *) &obj->gnu_hash[4];
+	buckets = &obj->gnu_hash[4 + (__ELF_NATIVE_CLASS / 32) * bitmask_nwords];
+	chain_zero = &buckets[nbuckets] - symbias;
+
+	/* hash our symbol */
+	hash = eh_hash_gnu(name);
+
+	/* bitmask stuff... no idea really :D */
+	bitmask_word = bitmask[(hash / __ELF_NATIVE_CLASS) & bitmask_idxbits];
+	hashbit1 = hash & (__ELF_NATIVE_CLASS - 1);
+	hashbit2 = (hash >> shift) & (__ELF_NATIVE_CLASS - 1);
+
+	/* wtf this does actually? */
+	if (!((bitmask_word >> hashbit1) & (bitmask_word >> hashbit2) & 1))
+		return EAGAIN;
+
+	/* locate bucket */
+	bucket = buckets[hash % nbuckets];
+	if (bucket == 0)
+		return EAGAIN;
+
+	/* and find match in chain */
+	hasharr = &chain_zero[bucket];
+	do {
+		if (((*hasharr ^ hash) >> 1) == 0) {
+			/* hash matches, but does the name? */
+			esym = &obj->symtab[hasharr - chain_zero];
+			if (esym->st_name) {
+				if (!strcmp(&obj->strtab[esym->st_name], name)) {
+					sym->sym = esym;
+					break;
+				}
+			}
+		}
+	} while ((*hasharr++ & 1u) == 0);
+
+	/* symbol not found */
+	if (sym->sym == NULL)
+		return EAGAIN;
+
+	sym->obj = obj;
+	sym->name = &obj->strtab[sym->sym->st_name];
+
+	return 0;
+}
+
+int eh_iterate_sym(eh_obj_t *obj, eh_iterate_sym_callback_func callback, void *arg)
+{
+	return ENOTSUP;
 }
 
 int eh_find_next_dyn(eh_obj_t *obj, ElfW_Sword tag, int i, ElfW(Dyn) **next)
