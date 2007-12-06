@@ -64,11 +64,14 @@ int iterate_obj_callback(eh_obj_t *obj, void *arg)
 
 	printf("[%02d] %s\n", ld->objects++, obj->name);
 
+	/*
+	not supported currently...
 	ld->symbols = 0;
 	if ((ret = eh_iterate_sym(obj, iterate_sym_callback, ld))) {
 		fprintf(stderr, "eh_iterate_sym failed: %s (%d)\n", strerror(ret), ret);
 		return ret;
 	}
+	*/
 
 	ld->rel = ld->rela = 0;
 	if ((ret = eh_iterate_rel(obj, iterate_rel_callback, ld))) {
