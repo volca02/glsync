@@ -1,0 +1,20 @@
+SET(ELFHACKS_SRC elfhacks.h elfhacks.c)
+
+IF (UNIX)
+  SET(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fvisibility=hidden")
+ENDIF (UNIX)
+
+ADD_LIBRARY(elfhacks_shared SHARED ${ELFHACKS_SRC})
+SET_TARGET_PROPERTIES(elfhacks_shared PROPERTIES
+		      OUTPUT_NAME elfhacks
+		      VERSION ${ELFHACKS_VER}
+		      SOVERSION ${ELFHACKS_SOVER})
+
+IF (UNIX)
+  IF (NOT MLIBDIR)
+    SET(MLIBDIR "lib")
+  ENDIF (NOT MLIBDIR)
+  INSTALL(TARGETS elfhacks_shared
+  	  LIBRARY DESTINATION ${MLIBDIR})
+  INSTALL(FILES elfhacks.h DESTINATION include)
+ENDIF (UNIX)
