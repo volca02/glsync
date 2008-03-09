@@ -6,9 +6,9 @@
  */
 
 /* elfhacks.h -- Various ELF run-time hacks
-  version 0.4.0, December 6th, 2007
+  version 0.4.1, March 9th, 2008
 
-  Copyright (C) 2007 Pyry Haulos
+  Copyright (C) 2007-2008 Pyry Haulos
 
   This software is provided 'as-is', without any express or implied
   warranty.  In no event will the authors be held liable for any damages
