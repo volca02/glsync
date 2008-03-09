@@ -2,11 +2,7 @@
  * \file src/elfhacks.c
  * \brief various ELF run-time hacks
  * \author Pyry Haulos <pyry.haulos@gmail.com>
- * \date 2007
- */
-
-/* elfhacks.c -- various ELF run-time hacks
- * Copyright (C) 2007 Pyry Haulos
+ * \date 2007-2008
  * For conditions of distribution and use, see copyright notice in elfhacks.h
  */
 
@@ -31,7 +27,7 @@ struct eh_iterate_callback_args {
 	void *arg;
 };
 
-int eh_check_addr(eh_obj_t *obj, void *addr);
+int eh_check_addr(eh_obj_t *obj, const void *addr);
 int eh_find_callback(struct dl_phdr_info *info, size_t size, void *argptr);
 int eh_find_next_dyn(eh_obj_t *obj, ElfW_Sword tag, int i, ElfW(Dyn) **next);
 int eh_init_obj(eh_obj_t *obj);
@@ -127,7 +123,7 @@ int eh_find_obj(eh_obj_t *obj, const char *soname)
 	return eh_init_obj(obj);
 }
 
-int eh_check_addr(eh_obj_t *obj, void *addr)
+int eh_check_addr(eh_obj_t *obj, const void *addr)
 {
 	/*
 	 Check that given address is inside program's
@@ -213,8 +209,8 @@ int eh_init_obj(eh_obj_t *obj)
 	}
 
 	/* This is here to catch b0rken headers (vdso) */
-	if ((eh_check_addr(obj, (void *) obj->strtab)) |
-	    (eh_check_addr(obj, (void *) obj->symtab)))
+	if ((eh_check_addr(obj, (const void *) obj->strtab)) |
+	    (eh_check_addr(obj, (const void *) obj->symtab)))
 		return ENOTSUP;
 
 	if (obj->hash) {

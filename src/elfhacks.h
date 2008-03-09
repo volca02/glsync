@@ -2,7 +2,7 @@
  * \file src/elfhacks.h
  * \brief elfhacks application interface
  * \author Pyry Haulos <pyry.haulos@gmail.com>
- * \date 2007
+ * \date 2007-2008
  */
 
 /* elfhacks.h -- Various ELF run-time hacks
