@@ -134,8 +134,8 @@ typedef int (*eh_iterate_rel_callback_func)(eh_rel_t *rel, void *arg);
  * filename metacharacters and expressions work.
  *
  * If soname is NULL, this function returns the main program object.
+ * \param obj elfhacks object
  * \param soname object's soname (see /proc/pid/maps) or NULL for main
- * \param objptr returned pointer
  * \return 0 on success otherwise a positive error code
 */
 __PUBLIC int eh_find_obj(eh_obj_t *obj, const char *soname);
