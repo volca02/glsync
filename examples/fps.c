@@ -6,6 +6,14 @@
  * For conditions of distribution and use, see copyright notice in elfhacks.h
  */
 
+/*
+ Compile with:
+ gcc -fPIC -shared -o fps.so fps.c -lelfhacks -Wall -O2
+
+ And use:
+ FPS_LOG_FILE=fps.txt LD_PRELOAD=fps.so [some opengl app]
+ */
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

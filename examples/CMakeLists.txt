@@ -7,3 +7,6 @@ TARGET_LINK_LIBRARIES(dlsymhook elfhacks)
 
 ADD_LIBRARY(ldinfo SHARED ldinfo.c)
 TARGET_LINK_LIBRARIES(ldinfo elfhacks)
+
+ADD_LIBRARY(fps SHARED fps.c)
+TARGET_LINK_LIBRARIES(fps elfhacks)
