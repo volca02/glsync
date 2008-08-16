@@ -24,6 +24,8 @@
 #define FPS_SAMPLE_USEC 1000000
 #define FPS_FORMAT "%.2f\n"
 
+typedef void (*GLXextFuncPtr)(void);
+
 /**
  * \brief fps private data struct
  */
@@ -33,6 +35,9 @@ struct fps_data_s {
 
 	/** pointer to real dlvsym() */
 	void *(*dlvsym)(void*, const char*, const char*);
+
+	/** pointer to real glXGetProcAddressARB() */
+	GLXextFuncPtr (*glXGetProcAddressARB)(const GLubyte*);
 
 	/** pointer to real glXSwapBuffers() */
 	void (*glXSwapBuffers)(Display*, GLXDrawable);
@@ -85,6 +90,12 @@ void init_fps_data()
 		exit(1);
 	}
 
+	fps_data->glXGetProcAddressARB = (GLXextFuncPtr (*)(const GLubyte*)) fps_data->dlsym(libGL_handle, "glXGetProcAddressARB");
+	if (fps_data->glXGetProcAddressARB == NULL) {
+		fprintf(stderr, "can't get glXGetProcAddressARB()\n");
+		exit(1);
+	}
+
 	fps_data->glXSwapBuffers = (void (*)(Display*, GLXDrawable)) fps_data->dlsym(libGL_handle, "glXSwapBuffers");
 	if (fps_data->glXSwapBuffers == NULL) {
 		fprintf(stderr, "can't get glXSwapBuffers()\n");
@@ -134,11 +145,35 @@ void fps_glXSwapBuffers(Display* dpy, GLXDrawable drawable)
 }
 
 /**
+ * \brief glXGetProcAddressARB() hook
+ */
+GLXextFuncPtr fps_glXGetProcAddressARB(const GLubyte *proc_name)
+{
+	if (fps_data == NULL)
+		init_fps_data();
+
+	if (!strcmp((char*) proc_name, "glXSwapBuffers"))
+		return (GLXextFuncPtr) &fps_glXSwapBuffers;
+	else if (!strcmp((char*) proc_name, "glXGetProcAddressARB"))
+		return (GLXextFuncPtr) &fps_glXGetProcAddressARB;
+	else
+		return fps_data->glXGetProcAddressARB(proc_name);
+}
+
+/**
  * \brief glXSwapBuffers() entry point
  */
 void glXSwapBuffers(Display *dpy, GLXDrawable drawable)
 {
 	fps_glXSwapBuffers(dpy, drawable);
+}
+
+/**
+ * \brief glXGetProcAddressARB() entry point
+ */
+GLXextFuncPtr glXGetProcAddressARB(const GLubyte *proc_name)
+{
+	return fps_glXGetProcAddressARB(proc_name);
 }
 
 /**
@@ -151,6 +186,8 @@ void *dlsym(void *handle, const char *symbol)
 
 	if (!strcmp(symbol, "glXSwapBuffers"))
 		return (void*) &fps_glXSwapBuffers;
+	else if (!strcmp(symbol, "glXGetProcAddressARB"))
+		return (void*) &fps_glXGetProcAddressARB;
 	else
 		return fps_data->dlsym(handle, symbol);
 }
