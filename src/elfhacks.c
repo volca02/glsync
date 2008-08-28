@@ -443,7 +443,7 @@ int eh_set_rela_plt(eh_obj_t *obj, int p, const char *sym, void *val)
 {
 	ElfW(Rela) *rela = (ElfW(Rela) *) obj->dynamic[p].d_un.d_ptr;
 	ElfW(Dyn) *relasize;
-	int i;
+	unsigned int i;
 
 	/* DT_PLTRELSZ contains PLT relocs size in bytes */
 	if (eh_find_next_dyn(obj, DT_PLTRELSZ, p, &relasize))
@@ -464,7 +464,7 @@ int eh_set_rel_plt(eh_obj_t *obj, int p, const char *sym, void *val)
 {
 	ElfW(Rel) *rel = (ElfW(Rel) *) obj->dynamic[p].d_un.d_ptr;
 	ElfW(Dyn) *relsize;
-	int i;
+	unsigned int i;
 
 	if (eh_find_next_dyn(obj, DT_PLTRELSZ, p, &relsize))
 		return EINVAL; /* b0rken elf :/ */
@@ -516,7 +516,7 @@ int eh_iterate_rela_plt(eh_obj_t *obj, int p, eh_iterate_rel_callback_func callb
 	ElfW(Dyn) *relasize;
 	eh_rel_t rel;
 	eh_sym_t sym;
-	int i, ret;
+	unsigned int i, ret;
 
 	rel.sym = &sym;
 	rel.rel = NULL;
@@ -546,7 +546,7 @@ int eh_iterate_rel_plt(eh_obj_t *obj, int p, eh_iterate_rel_callback_func callba
 	ElfW(Dyn) *relsize;
 	eh_rel_t rel;
 	eh_sym_t sym;
-	int i, ret;
+	unsigned int i, ret;
 
 	rel.sym = &sym;
 	rel.rela = NULL;
