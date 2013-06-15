@@ -115,14 +115,20 @@ void sync_glXSwapBuffers(Display* dpy, GLXDrawable drawable)
             first = 0;
         }
 
-        GLsync sync = (GLsync)glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+        static GLsync prev_sync = 0;
+        GLsync sync = glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
         handleGLError("glFenceSync");
         sync_data->glXSwapBuffers(dpy, drawable);
         handleGLError("glXSwapBuffers");
-        glClientWaitSync(sync, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
-        handleGLError("glWaitSync");
-        glDeleteSync(sync);
-        handleGLError("glDeleteSync");
+
+        if (prev_sync) {
+            glClientWaitSync(prev_sync, GL_SYNC_FLUSH_COMMANDS_BIT, GL_TIMEOUT_IGNORED);
+            handleGLError("glWaitSync");
+            glDeleteSync(prev_sync);
+            handleGLError("glDeleteSync");
+        }
+
+        prev_sync = sync;
 }
 
 /**
