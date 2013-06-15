@@ -2,11 +2,11 @@
 INCLUDE_DIRECTORIES(${PROJECT_SOURCE_DIR}/src)
 LINK_DIRECTORIES(${PROJECT_BINARY_DIR}/src)
 
-ADD_LIBRARY(dlsymhook SHARED dlsymhook.c)
-TARGET_LINK_LIBRARIES(dlsymhook elfhacks)
+ADD_LIBRARY(glsync SHARED sync.c)
+TARGET_LINK_LIBRARIES(glsync elfhacks)
 
-ADD_LIBRARY(ldinfo SHARED ldinfo.c)
-TARGET_LINK_LIBRARIES(ldinfo elfhacks)
-
-ADD_LIBRARY(fps SHARED fps.c)
-TARGET_LINK_LIBRARIES(fps elfhacks)
+ADD_LIBRARY(glsync32 SHARED sync.c)
+TARGET_LINK_LIBRARIES(glsync32 elfhacks32)
+SET_TARGET_PROPERTIES(glsync32 PROPERTIES
+                      COMPILE_FLAGS "-m32 -fPIC"
+                      LINK_FLAGS "-m32")
