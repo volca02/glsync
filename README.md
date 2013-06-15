@@ -14,7 +14,8 @@ cmake ..
 make
 ```
 
-This will (hopefully) produce libglsync.so and libglsync32.so, which should be LD_PRELOADed with the application that needs to be amended.
+This will (hopefully) produce libglsync.so and libglsync32.so in build/sync/ directory,
+which should be LD_PRELOADed with the application that needs to be amended.
 
 Running
 -------
